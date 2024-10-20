@@ -1,24 +1,41 @@
 import datetime
-
 import requests
 from PIL import Image
 import io
+import os
 import time
 import openai
+from openai import OpenAI
+from anthropic import (
+    Anthropic,
+    HUMAN_PROMPT,
+    AI_PROMPT,
+    APIError,
+    RateLimitError as AnthropicRateLimitError,
+)
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk import client
+import grpc
 
+openai_client = OpenAI(api_key="your-openai-api-key-here")
 
-class APIError(Exception):
-    pass
+stability_api = client.StabilityInference(key="your-stability-api-key-here")
+
+anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+if not anthropic_api_key:
+    raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
+anthropic_client = Anthropic(api_key=anthropic_api_key)
 
 
 class RateLimitError(Exception):
     pass
 
 
-openai.api_key = "your-api-key-here"
-stability_api = client.StabilityInference(key="your-api-key")
+class APIError(Exception):
+    def __init__(self, message, request=None):
+        self.message = message
+        self.request = request
+        super().__init__(self.message)
 
 
 class Kou:
@@ -40,58 +57,181 @@ class Kou:
         self.description = description
         self.images = images or []
 
-    def generate_description(self, llm_type="gpt3"):
+    def generate_description(self, llm_type="gpt3", custom_prompt=""):
         """Generate description using specified LLM"""
-        if llm_type == "gpt3":
-            self.description = self._generate_gpt3_description()
-        elif llm_type == "llama":
-            self.description = self._generate_llama_description()
-        # Add more LLM options as needed
+        try:
+            if llm_type == "gpt3":
+                self.description = self._generate_gpt3_description(custom_prompt)
+            elif llm_type == "claude":
+                self.description = self._generate_claude_description(custom_prompt)
+            else:
+                raise ValueError(f"Unsupported LLM type: {llm_type}")
+            return self.description
+        except (APIError, RateLimitError) as e:
+            print(f"Error generating description: {str(e)}")
+            return None
 
-    def generate_image(self, ai_model="stable_diffusion", style="realistic"):
+    def _generate_description_prompt(self, custom_prompt=""):
+        base_prompt = f"Describe the Japanese micro-season '{self.english}' ({self.kanji}) which occurs from {self.start_date} to {self.end_date}."
+        if custom_prompt:
+            return f"{base_prompt} {custom_prompt}"
+        return base_prompt
+
+    def _generate_gpt3_description(self, custom_prompt=""):
+        max_retries = 3
+        retry_delay = 5  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                prompt = self._generate_description_prompt(custom_prompt)
+                response = openai_client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a helpful assistant that describes Japanese micro-seasons.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                return response.choices[0].message.content.strip()
+            except openai.RateLimitError:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise RateLimitError("Rate limit exceeded for GPT-3 API")
+            except openai.APIError as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    print(f"GPT-3 API error: {str(e)}")
+                    return None
+
+    def _generate_claude_description(self, custom_prompt=""):
+        max_retries = 3
+        retry_delay = 5  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                prompt = self._generate_description_prompt(custom_prompt)
+
+                if hasattr(anthropic_client, "messages"):
+                    # New Claude-3 API
+                    response = anthropic_client.messages.create(
+                        model="claude-3-sonnet-20240229",  # Use the string directly
+                        max_tokens=1000,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    return response.content[0].text.strip()
+                else:
+                    # Fallback to old Claude-2 API
+                    full_prompt = f"{HUMAN_PROMPT} {prompt}{AI_PROMPT}"
+                    response = anthropic_client.completions.create(
+                        model="claude-2",
+                        prompt=full_prompt,
+                        max_tokens_to_sample=300,
+                        stop_sequences=[HUMAN_PROMPT],
+                    )
+                    return response.completion.strip()
+
+            except AnthropicRateLimitError:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise RateLimitError("Rate limit exceeded for Claude API")
+            except APIError as e:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    print(f"Claude API error: {str(e)}")
+                    return None
+
+    @staticmethod
+    def get_description_prompt_suggestions():
+        """Return a list of prompt suggestions for description generation"""
+        return [
+            "Focus on the natural phenomena occurring during this period.",
+            "Describe the agricultural activities associated with this season.",
+            "Explain the cultural significance of this micro-season in Japan.",
+            "Highlight the changes in flora and fauna during this time.",
+            "Discuss any festivals or traditions linked to this micro-season.",
+            "Describe the typical weather patterns during this period.",
+            "Explain how this micro-season affects daily life in Japan.",
+            "Highlight any poetry or literature associated with this season.",
+            "Describe the seasonal foods and dishes popular during this time.",
+            "Explain how this micro-season reflects Japanese aesthetics and philosophy.",
+        ]
+
+    def generate_image(
+        self,
+        ai_model="stable_diffusion",
+        style="realistic",
+        custom_prompt="",
+        filename=None,
+    ):
         """Generate image using specified AI model and style"""
-        if ai_model == "stable_diffusion":
-            image = self._generate_stable_diffusion_image(style)
-        elif ai_model == "dall_e":
-            image = self._generate_dall_e_image(style)
-        # Add more AI image generation options as needed
+        try:
+            if ai_model == "stable_diffusion":
+                image = self._generate_stable_diffusion_image(style, custom_prompt)
+            elif ai_model == "dall_e":
+                image = self._generate_dall_e_image(style, custom_prompt)
+            else:
+                raise ValueError(f"Unsupported AI model: {ai_model}")
 
-        if image:
-            self.images.append(image)
+            if image:
+                self.images.append(image)
+                if filename:
+                    self._save_image(image, ai_model, filename)
+                return image
+            return None
+        except (APIError, RateLimitError) as e:
+            print(f"Error generating image: {str(e)}")
+            return None
 
-    def _generate_gpt3_description(self):
-        # Implement GPT-3 API call here
-        prompt = f"Describe the Japanese micro-season '{self.english}' ({self.kanji}) which occurs from {self.start_date} to {self.end_date}."
-        response = openai.Completion.create(
-            engine="text-davinci-002", prompt=prompt, max_tokens=150
-        )
-        return response.choices[0].text.strip()
+    def _generate_stable_diffusion_image(self, style, custom_prompt):
+        max_retries = 3
+        retry_delay = 5  # seconds
 
-    def _generate_llama_description(self):
-        # Implement LLaMA API call here
-        # You'll need to set up access to LLaMA and use the appropriate library
-        pass
+        for attempt in range(max_retries):
+            try:
+                prompt = self._generate_image_prompt(style, custom_prompt)
+                answers = stability_api.generate(prompt=prompt)
+                for resp in answers:
+                    for artifact in resp.artifacts:
+                        if artifact.type == generation.ARTIFACT_IMAGE:
+                            return Image.open(io.BytesIO(artifact.binary))
+                return None
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        raise RateLimitError(
+                            "Rate limit exceeded for Stable Diffusion API"
+                        )
+                else:
+                    raise APIError(f"Stable Diffusion API error: {str(e)}")
 
-    def _generate_stable_diffusion_image(self, style):
-        # Implement Stable Diffusion API call here
-        prompt = self._generate_image_prompt(style)
-        answers = stability_api.generate(prompt=prompt)
-        for resp in answers:
-            for artifact in resp.artifacts:
-                if artifact.type == generation.ARTIFACT_IMAGE:
-                    img = Image.open(io.BytesIO(artifact.binary))
-                    return img  # or save the image, or convert to a format you prefer
-        return None
+    def _generate_dall_e_image(self, style, custom_prompt):
+        max_retries = 3
+        retry_delay = 5  # seconds
 
-    def _generate_dall_e_image(self, style):
-        # Implement DALL-E API call here
-        prompt = self._generate_image_prompt(style)
-        # Use the prompt with DALL-E API
-        # Return the generated image
-        pass
+        for attempt in range(max_retries):
+            try:
+                prompt = self._generate_image_prompt(style, custom_prompt)
+                response = client.images.generate(prompt=prompt, n=1, size="1024x1024")
+                image_url = response.data[0].url
+                return Image.open(requests.get(image_url, stream=True).raw)
+            except client.RateLimitError:
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise RateLimitError("Rate limit exceeded for DALL-E API")
+            except client.APIError as e:
+                raise APIError(f"DALL-E API error: {str(e)}")
 
-    def _generate_image_prompt(self, style):
-        """Generate a prompt for image creation based on the Kou and style"""
+    def _generate_image_prompt(self, style, custom_prompt=""):
+        """Generate a prompt for image creation based on the Kou, style, and custom prompt"""
         base_prompt = f"An image representing the Japanese micro-season '{self.english}' ({self.kanji})"
 
         style_prompts = {
@@ -103,8 +243,59 @@ class Kou:
             "pencil sketch": f"{base_prompt} as a detailed pencil sketch",
         }
 
-        return style_prompts.get(style, base_prompt)
+        full_prompt = (
+            f"{style_prompts.get(style, base_prompt)}. {custom_prompt}".strip()
+        )
+        return full_prompt
 
+    def _save_image(self, image, ai_model, filename):
+        """Save the generated image with timestamp and model information"""
+        timestamp = datetime.datetime.now().strftime("%Y%m%d")
+        file_extension = (
+            os.path.splitext(filename)[1]
+            if filename.endswith((".png", ".jpg", ".jpeg"))
+            else ".png"
+        )
+        full_filename = f"{filename}_{timestamp}_{ai_model}{file_extension}"
+        image.save(full_filename)
+        print(f"Image saved as: {full_filename}")
+
+    @staticmethod
+    def get_image_prompt_suggestions():
+        """Return a list of prompt suggestions for image generation"""
+        return [
+            ## THIS CONTAINS TEMPORAL ASPECT which interferes with the image subject (base prompt == microseason)
+            # "with cherry blossoms in the foreground",
+            "featuring a traditional Japanese garden",
+            "with Mount Fuji in the background",
+            "showing a busy Tokyo street",
+            "in a serene bamboo forest",
+            "with koi fish in a pond",
+            "featuring a majestic red torii gate",
+            "with a traditional tea ceremony setting",
+            "featuring iconic Japanese architecture",
+            "with a bonsai tree in the foreground",
+            "showing a peaceful Zen rock garden",
+            "with a group of macaque monkeys nearby",
+            "featuring a sumo wrestler",
+            "with geisha in traditional attire",
+            "showing a bullet train passing by",
+            "with Studio Ghibli-inspired elements",
+            "featuring Pikachu from Pokémon",
+            "with Naruto performing a jutsu",
+            "showing Sailor Moon and her team",
+            "with Goku from Dragon Ball powering up",
+            "featuring Totoro from My Neighbor Totoro",
+            "with Attack on Titan's Eren Yeager",
+            "showing One Piece's Monkey D. Luffy",
+            "with Death Note's Light and L",
+            "featuring characters from Demon Slayer",
+            "with samurai armor on display",
+            "showing a sushi chef at work",
+            "with paper lanterns illuminating the scene",
+        ]
+
+    # OTHER DESCRIPTIVE METHODS
     def get_start_date(self):
         return self.start_date
 
@@ -755,9 +946,7 @@ TERM_DICT = [
 def get_kou(date):
     """Returns the Kou object for the given date."""
     for term in TERM_DICT:
-        print(f"**{term}**")
         for kou in term.kous:
-            print(f"- {kou}")
             if kou.start_date <= date <= kou.end_date:
                 return kou
     return None
@@ -773,27 +962,56 @@ def get_term(date):
 
 # Example usage
 today = datetime.date.today()
-cur_kou = get_kou(today)
-
-if cur_kou:
-    print(f"Current kou (micro-season): {cur_kou}")
-    print(f"++Next kou: {cur_kou.get_next_kou()}")
-    print(f"--Previous kou: {cur_kou.get_previous_kou()}")
-else:
-    print("No kou (micro-season) found for today's date.")
-
-
-cur_kou.generate_description(llm_type="gpt3")
-cur_kou.generate_image(ai_model="stable_diffusion")
-
-print(f"Description: {cur_kou.description}")
-print(f"Number of images: {len(cur_kou.images)}")
-
 
 cur_term = get_term(today)
 if cur_term:
-    print(f"**Current term (season24): {cur_term}")
-    print(f"+++Next term: {cur_term.get_next_term()}")
-    print(f"---Previous term: {cur_term.get_previous_term()}")
+    print(f"# Current term (season24): {cur_term}")
+    print(f"+++ Next term: {cur_term.get_next_term()}")
+    print(f"--- Previous term: {cur_term.get_previous_term()}")
 else:
     print("No term (season24) found for today's date.")
+
+
+cur_kou = get_kou(today)
+
+if cur_kou:
+    print(f"### Current kou (micro-season): {cur_kou}")
+    print(f"+++++ Next kou: {cur_kou.get_next_kou()}")
+    print(f"----- Previous kou: {cur_kou.get_previous_kou()}")
+else:
+    print("No kou (micro-season) found for today's date.")
+
+# GenAI
+print("Description prompt suggestions:")
+for suggestion in cur_kou.get_description_prompt_suggestions():
+    print(f"- {suggestion}")
+# Generate description with custom prompt
+custom_prompt = "Focus on the natural phenomena occurring during this period."
+gpt3_description = cur_kou.generate_description(
+    llm_type="gpt3", custom_prompt=custom_prompt
+)
+if gpt3_description:
+    print(f"Generated description (GPT-3): {gpt3_description}")
+# Generate description with Claude
+claude_description = cur_kou.generate_description(
+    llm_type="claude", custom_prompt=custom_prompt
+)
+if claude_description:
+    print(f"Generated description (Claude): {claude_description}")
+
+
+print("Image prompt suggestions:")
+for suggestion in cur_kou.get_image_prompt_suggestions():
+    print(f"- {suggestion}")
+
+# Generate image with custom prompt and save to file
+custom_prompt = "with Totoro from My Neighbor Totoro sitting under a red torii gate"
+image = cur_kou.generate_image(
+    ai_model="stable_diffusion",
+    style="ukiyo-e",
+    custom_prompt=custom_prompt,
+    filename="east_wind_image",
+)
+
+if image:
+    print("Image generated successfully")
