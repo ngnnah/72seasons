@@ -16,14 +16,28 @@ from anthropic import (
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
 from stability_sdk import client
 import grpc
+from dotenv import load_dotenv
 
-openai_client = OpenAI(api_key="your-openai-api-key-here")
+# Load environment variables from .env file
+load_dotenv()
 
-stability_api = client.StabilityInference(key="your-stability-api-key-here")
 
-anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
-if not anthropic_api_key:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
+# Function to get environment variable and raise ValueError if not set
+def get_env_variable(var_name):
+    value = os.getenv(var_name)
+    if not value:
+        raise ValueError(f"{var_name} is not set in the .env file")
+    return value
+
+
+# Get API keys from .env file
+openai_api_key = get_env_variable("OPENAI_API_KEY")
+stability_api_key = get_env_variable("STABILITY_API_KEY")
+anthropic_api_key = get_env_variable("ANTHROPIC_API_KEY")
+
+# Initialize clients with API keys
+openai_client = OpenAI(api_key=openai_api_key)
+stability_api = client.StabilityInference(key=stability_api_key)
 anthropic_client = Anthropic(api_key=anthropic_api_key)
 
 
@@ -114,13 +128,24 @@ class Kou:
         for attempt in range(max_retries):
             try:
                 prompt = self._generate_description_prompt(custom_prompt)
+                system_message = (
+                    "You are an AI assistant specializing in Japanese seasons and culture. "
+                    "Provide detailed and accurate information about the 72 seasons of Japan."
+                )
 
                 if hasattr(anthropic_client, "messages"):
                     # New Claude-3 API
                     response = anthropic_client.messages.create(
-                        model="claude-3-sonnet-20240229",  # Use the string directly
+                        model="claude-3-5-sonnet-20240620",
                         max_tokens=1000,
-                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0,  # Set temperature to 0 for deterministic output
+                        system=system_message,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": prompt}],
+                            }
+                        ],
                     )
                     return response.content[0].text.strip()
                 else:

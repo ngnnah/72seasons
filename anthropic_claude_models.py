@@ -1,18 +1,23 @@
 import os
+from dotenv import load_dotenv
 from anthropic import Anthropic
 
-# Ensure you have set your API key as an environment variable
-api_key = os.environ.get("ANTHROPIC_API_KEY")
+# Load environment variables from .env file
+load_dotenv()
+
+# Get the API key from the .env file
+api_key = os.getenv("ANTHROPIC_API_KEY")
 if not api_key:
     raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
 
 client = Anthropic(api_key=api_key)
 
 # Updated list of known Claude models, including Claude 3.5
+# https://docs.anthropic.com/en/docs/about-claude/models
 known_models = [
-    "claude-3.5-sonnet-20240229",  # Claude 3.5 Sonnet
-    "claude-3.5-opus-20240229",  # Claude 3.5 Opus
-    "claude-3.5-haiku-20240307",  # Claude 3.5 Haiku
+    "claude-3-5-sonnet-20240620",  # Claude 3.5 Sonnet
+    # Claude 3.5 Opus -- Later this year
+    # Claude 3.5 Haiku -- Later this year
     "claude-3-opus-20240229",
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
