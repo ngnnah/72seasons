@@ -5,12 +5,17 @@ from anthropic import Anthropic
 # Load environment variables from .env file
 load_dotenv()
 
-# Get the API key from the .env file
-api_key = os.getenv("ANTHROPIC_API_KEY")
-if not api_key:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is not set")
 
-client = Anthropic(api_key=api_key)
+# Function to get environment variable and raise ValueError if not set
+def get_env_variable(var_name):
+    value = os.getenv(var_name)
+    if not value:
+        raise ValueError(f"{var_name} is not set in the .env file")
+    return value
+
+
+anthropic_api_key = get_env_variable("ANTHROPIC_API_KEY")
+client = Anthropic(api_key=anthropic_api_key)
 
 # Updated list of known Claude models, including Claude 3.5
 # https://docs.anthropic.com/en/docs/about-claude/models
