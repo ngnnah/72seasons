@@ -333,14 +333,14 @@ class Kou:
         )
 
         # Create the full filename with UUID
-        full_filename = f"image/{ai_model}-{filename}:{datetime.datetime.now().strftime('%Y%m%d')}_{image_uuid}{file_extension}"
+        full_filename = f"images/{ai_model}-{filename}:{datetime.datetime.now().strftime('%Y%m%d')}_{image_uuid}{file_extension}"
 
         # Save the image
         image.save(full_filename)
         print(f"Image saved as: {full_filename}")
 
         # Save the prompt, model information, and parameters to prompts.txt
-        with open("prompts_params/history.txt", "a") as f:
+        with open("history.txt", "a") as f:
             f.write(f"UUID: {image_uuid}\n")
             f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}\n")
             f.write(f"Prompt: {prompt}\n")
