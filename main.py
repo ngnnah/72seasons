@@ -310,13 +310,11 @@ class Kou:
 
     def _generate_image_prompt(self, style, custom_prompt=""):
         """Generate a prompt for image creation based on the Kou, style, and custom prompt"""
-        base_prompt = (
-            f"An image representing the Japanese micro-season '{self.english}'"
-        )
+        base_prompt = f"Primary visual focus on Japanese micro-season '{self.english}'"
         # Get the style prompt based on the provided style
         style_prompt = STYLE_PRESETS.get(style, "realistic")
         full_prompt = f"{style_prompt}: {base_prompt}" + (
-            f"; {custom_prompt}" if custom_prompt else ""
+            f", with secondary elements: {custom_prompt}" if custom_prompt else ""
         )
         return full_prompt
 
