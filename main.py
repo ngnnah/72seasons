@@ -1,3 +1,5 @@
+from constants import STYLE_PRESETS, IMAGE_SUGGESTIONS, DESCRIPTION_SUGGESTIONS
+
 import datetime
 import requests
 from PIL import Image
@@ -6,17 +8,16 @@ import os
 import time
 import openai
 from openai import OpenAI
-from anthropic import (
-    Anthropic,
-    HUMAN_PROMPT,
-    AI_PROMPT,
-    APIError,
-    RateLimitError as AnthropicRateLimitError,
-)
-import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation
-from stability_sdk import client
-import grpc
+
+# from anthropic import (
+#     Anthropic,
+#     HUMAN_PROMPT,
+#     AI_PROMPT,
+#     APIError,
+#     RateLimitError as AnthropicRateLimitError,
+# )
 from dotenv import load_dotenv
+import uuid
 
 # Load environment variables from .env file
 load_dotenv()
@@ -31,14 +32,13 @@ def get_env_variable(var_name):
 
 
 # Get API keys from .env file
-openai_api_key = get_env_variable("OPENAI_API_KEY")
-stability_api_key = get_env_variable("STABILITY_API_KEY")
-anthropic_api_key = get_env_variable("ANTHROPIC_API_KEY")
+# OPENAI_API_KEY = get_env_variable("OPENAI_API_KEY")
+# ANTHROPIC_API_KEY = get_env_variable("ANTHROPIC_API_KEY")
+STABILITY_API_KEY = get_env_variable("STABILITY_API_KEY")
 
 # Initialize clients with API keys
-openai_client = OpenAI(api_key=openai_api_key)
-stability_api = client.StabilityInference(key=stability_api_key)
-anthropic_client = Anthropic(api_key=anthropic_api_key)
+# openai_client = OpenAI(api_key=OPENAI_API_KEY)
+# anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
 class RateLimitError(Exception):
@@ -73,6 +73,7 @@ class Kou:
 
     def generate_description(self, llm_type="gpt3", custom_prompt=""):
         """Generate description using specified LLM"""
+        return
         try:
             if llm_type == "gpt3":
                 self.description = self._generate_gpt3_description(custom_prompt)
@@ -174,77 +175,129 @@ class Kou:
     @staticmethod
     def get_description_prompt_suggestions():
         """Return a list of prompt suggestions for description generation"""
-        return [
-            "Focus on the natural phenomena occurring during this period.",
-            "Describe the agricultural activities associated with this season.",
-            "Explain the cultural significance of this micro-season in Japan.",
-            "Highlight the changes in flora and fauna during this time.",
-            "Discuss any festivals or traditions linked to this micro-season.",
-            "Describe the typical weather patterns during this period.",
-            "Explain how this micro-season affects daily life in Japan.",
-            "Highlight any poetry or literature associated with this season.",
-            "Describe the seasonal foods and dishes popular during this time.",
-            "Explain how this micro-season reflects Japanese aesthetics and philosophy.",
-        ]
+        return DESCRIPTION_SUGGESTIONS
 
+    # TODO: image_to_video https://platform.stability.ai/docs/api-reference#tag/Image-to-Video
     def generate_image(
         self,
         ai_model="stable_diffusion",
         style="realistic",
         custom_prompt="",
-        filename=None,
     ):
         """Generate image using specified AI model and style"""
         try:
+            # Initialize model parameters
+            model_params = {
+                "model": ai_model,
+                "style": style,
+                "base_prompt": self.english,
+                "custom_prompt": custom_prompt,
+                "temperature": 0,  # Example parameter, adjust as needed
+                "max_tokens": 1000,  # Example parameter, adjust as needed
+                "seed": 42,  # Consistent seed for reproducibility
+            }
+
+            prompt = self._generate_image_prompt(style, custom_prompt)
+            print(f"prompt: {prompt}")
+            print(f"model_params: {model_params}")
             if ai_model == "stable_diffusion":
-                image = self._generate_stable_diffusion_image(style, custom_prompt)
+                # Generate image with the updated prompt and save to a dynamic filename
+                image = self._generate_stable_diffusion_image(prompt, model_params)
             elif ai_model == "dall_e":
-                image = self._generate_dall_e_image(style, custom_prompt)
+                image = self._generate_dall_e_image(prompt, model_params)
             else:
                 raise ValueError(f"Unsupported AI model: {ai_model}")
 
             if image:
                 self.images.append(image)
+                filename = f"{self.english.replace(' ', '_')}"  # Replace spaces with underscores for the filename
+                print(f"filename: {filename}")
                 if filename:
-                    self._save_image(image, ai_model, filename)
+                    self._save_image(image, ai_model, prompt, model_params, filename)
                 return image
             return None
         except (APIError, RateLimitError) as e:
             print(f"Error generating image: {str(e)}")
             return None
 
-    def _generate_stable_diffusion_image(self, style, custom_prompt):
+    def _generate_stable_diffusion_image(self, prompt, model_params):
+        """Generate an image using the Stable Diffusion Core API."""
         max_retries = 3
         retry_delay = 5  # seconds
 
+        # Extract parameters from model_params
+        seed = model_params.get("seed", None)  # Default to None if not provided
+        output_format = model_params.get(
+            "output_format", "png"
+        )  # Default to png if not provided
+
+        # Prepare the payload for the Stable Image Core endpoint
+        payload = {
+            "prompt": prompt,
+            "seed": seed,
+            "output_format": output_format,
+            # Add any other optional parameters as needed
+            # TODO: aspect_ratio; negative_prompt; style_preset
+        }
+
+        # Set the headers, including the API key
+        headers = {
+            "Authorization": f"Bearer {STABILITY_API_KEY}",  # Replace with your actual API key
+            "Accept": "image/*",  # Change to "application/json" if you want base64 response
+        }
+
         for attempt in range(max_retries):
             try:
-                prompt = self._generate_image_prompt(style, custom_prompt)
-                answers = stability_api.generate(prompt=prompt)
-                for resp in answers:
-                    for artifact in resp.artifacts:
-                        if artifact.type == generation.ARTIFACT_IMAGE:
-                            return Image.open(io.BytesIO(artifact.binary))
-                return None
-            except grpc.RpcError as e:
-                if e.code() == grpc.StatusCode.RESOURCE_EXHAUSTED:
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                    else:
-                        raise RateLimitError(
-                            "Rate limit exceeded for Stable Diffusion API"
-                        )
+                # Make the POST request to the Stable Image Core API with multipart/form-data
+                response = requests.post(
+                    "https://api.stability.ai/v2beta/stable-image/generate/core",
+                    headers=headers,
+                    files={
+                        "prompt": (None, payload["prompt"]),  # Send prompt as form data
+                        "seed": (None, str(payload["seed"])),  # Send seed if provided
+                        "output_format": (
+                            None,
+                            payload["output_format"],
+                        ),  # Send output format
+                        # Add any other parameters as needed
+                    },
+                )
+
+                # Check if the response is successful
+                if response.status_code == 200:
+                    # If you set Accept to "image/*", the response will be the image
+                    return Image.open(io.BytesIO(response.content))
                 else:
-                    raise APIError(f"Stable Diffusion API error: {str(e)}")
+                    raise APIError(f"Stable Diffusion API error: {response.text}")
 
-    def _generate_dall_e_image(self, style, custom_prompt):
+            except requests.exceptions.RequestException as e:
+                print(f"Request failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                else:
+                    raise APIError(
+                        f"Failed to generate image after {max_retries} attempts."
+                    )
+
+    def _generate_dall_e_image(self, prompt, model_params):
+        """Generate an image using the DALL-E model."""
         max_retries = 3
         retry_delay = 5  # seconds
 
+        # Extract parameters from model_params
+        n_images = model_params.get("n_images", 1)  # Default to 1 if not provided
+        size = model_params.get("size", "1024x1024")  # Default size if not provided
+        seed = model_params.get("seed", None)  # Default to None if not provided
+
         for attempt in range(max_retries):
             try:
-                prompt = self._generate_image_prompt(style, custom_prompt)
-                response = client.images.generate(prompt=prompt, n=1, size="1024x1024")
+                # Call the DALL-E API with the specified parameters
+                response = client.images.generate(
+                    prompt=prompt,
+                    n=n_images,
+                    size=size,
+                    seed=seed,  # Include the seed for consistent results
+                )
                 image_url = response.data[0].url
                 return Image.open(requests.get(image_url, stream=True).raw)
             except client.RateLimitError:
@@ -257,68 +310,51 @@ class Kou:
 
     def _generate_image_prompt(self, style, custom_prompt=""):
         """Generate a prompt for image creation based on the Kou, style, and custom prompt"""
-        base_prompt = f"An image representing the Japanese micro-season '{self.english}' ({self.kanji})"
-
-        style_prompts = {
-            "realistic": f"{base_prompt} in a realistic style",
-            "anime": f"{base_prompt} in anime style",
-            "ukiyo-e": f"{base_prompt} in the style of traditional Japanese ukiyo-e art",
-            "watercolor": f"{base_prompt} as a watercolor painting",
-            "digital art": f"{base_prompt} as digital art",
-            "pencil sketch": f"{base_prompt} as a detailed pencil sketch",
-        }
-
-        full_prompt = (
-            f"{style_prompts.get(style, base_prompt)}. {custom_prompt}".strip()
+        base_prompt = (
+            f"An image representing the Japanese micro-season '{self.english}'"
+        )
+        # Get the style prompt based on the provided style
+        style_prompt = STYLE_PRESETS.get(style, "realistic")
+        full_prompt = f"{style_prompt}: {base_prompt}" + (
+            f"; {custom_prompt}" if custom_prompt else ""
         )
         return full_prompt
 
-    def _save_image(self, image, ai_model, filename):
-        """Save the generated image with timestamp and model information"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d")
+    def _save_image(self, image, ai_model, prompt, params, filename):
+        """Save the generated image with timestamp, model information, and parameters"""
+        # Generate a UUID for the image name
+        image_uuid = str(uuid.uuid4())
+
+        # Determine the file extension
         file_extension = (
             os.path.splitext(filename)[1]
             if filename.endswith((".png", ".jpg", ".jpeg"))
             else ".png"
         )
-        full_filename = f"{filename}_{timestamp}_{ai_model}{file_extension}"
+
+        # Create the full filename with UUID
+        full_filename = f"image/{ai_model}-{filename}:{datetime.datetime.now().strftime('%Y%m%d')}_{image_uuid}{file_extension}"
+
+        # Save the image
         image.save(full_filename)
         print(f"Image saved as: {full_filename}")
+
+        # Save the prompt, model information, and parameters to prompts.txt
+        with open("prompts_params/history.txt", "a") as f:
+            f.write(f"UUID: {image_uuid}\n")
+            f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}\n")
+            f.write(f"Prompt: {prompt}\n")
+            f.write(f"Model: {ai_model}\n")
+            f.write("Parameters:\n")
+            for key, value in params.items():
+                f.write(f"  {key}: {value}\n")
+            f.write(f"Saved Image: {full_filename}\n")
+            f.write("\n")  # Add a newline for better separation between entries
 
     @staticmethod
     def get_image_prompt_suggestions():
         """Return a list of prompt suggestions for image generation"""
-        return [
-            ## THIS CONTAINS TEMPORAL ASPECT which interferes with the image subject (base prompt == microseason)
-            # "with cherry blossoms in the foreground",
-            "featuring a traditional Japanese garden",
-            "with Mount Fuji in the background",
-            "showing a busy Tokyo street",
-            "in a serene bamboo forest",
-            "with koi fish in a pond",
-            "featuring a majestic red torii gate",
-            "with a traditional tea ceremony setting",
-            "featuring iconic Japanese architecture",
-            "with a bonsai tree in the foreground",
-            "showing a peaceful Zen rock garden",
-            "with a group of macaque monkeys nearby",
-            "featuring a sumo wrestler",
-            "with geisha in traditional attire",
-            "showing a bullet train passing by",
-            "with Studio Ghibli-inspired elements",
-            "featuring Pikachu from Pokémon",
-            "with Naruto performing a jutsu",
-            "showing Sailor Moon and her team",
-            "with Goku from Dragon Ball powering up",
-            "featuring Totoro from My Neighbor Totoro",
-            "with Attack on Titan's Eren Yeager",
-            "showing One Piece's Monkey D. Luffy",
-            "with Death Note's Light and L",
-            "featuring characters from Demon Slayer",
-            "with samurai armor on display",
-            "showing a sushi chef at work",
-            "with paper lanterns illuminating the scene",
-        ]
+        return IMAGE_SUGGESTIONS
 
     # OTHER DESCRIPTIVE METHODS
     def get_start_date(self):
@@ -1007,9 +1043,6 @@ else:
     print("No kou (micro-season) found for today's date.")
 
 # GenAI
-print("Description prompt suggestions:")
-for suggestion in cur_kou.get_description_prompt_suggestions():
-    print(f"- {suggestion}")
 # Generate description with custom prompt
 custom_prompt = "Focus on the natural phenomena occurring during this period."
 gpt3_description = cur_kou.generate_description(
@@ -1025,17 +1058,13 @@ if claude_description:
     print(f"Generated description (Claude): {claude_description}")
 
 
-print("Image prompt suggestions:")
-for suggestion in cur_kou.get_image_prompt_suggestions():
-    print(f"- {suggestion}")
-
 # Generate image with custom prompt and save to file
-custom_prompt = "with Totoro from My Neighbor Totoro sitting under a red torii gate"
-image = cur_kou.generate_image(
+custom_prompt = "featuring a sumo wrestler, a geisha in traditional attire, and a group of macaque monkeys nearby"
+
+image = cur_kou.get_previous_kou().generate_image(
     ai_model="stable_diffusion",
-    style="ukiyo-e",
+    style="splatter paint",
     custom_prompt=custom_prompt,
-    filename="east_wind_image",
 )
 
 if image:

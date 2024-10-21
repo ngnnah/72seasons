@@ -1,0 +1,69 @@
+UUID: 3e937a16-dd70-4a57-98aa-57eedc6bae7f
+Timestamp: 20241021
+Prompt: with Totoro from My Neighbor Totoro sitting under a red torii gate
+Model: stable_diffusion
+Parameters:
+  model: stable_diffusion
+  style: ukiyo-e
+  prompt: with Totoro from My Neighbor Totoro sitting under a red torii gate
+  temperature: 0
+  max_tokens: 1000
+  seed: 42
+Saved Image: image/east_wind_image_3e937a16-dd70-4a57-98aa-57eedc6bae7f_20241021_stable_diffusion.png
+
+UUID: ec1d24d7-7fc4-40c6-82ef-de588b8fae04
+Timestamp: 20241021
+Prompt: An image representing the Japanese micro-season 'Crickets chirp around the door' (蟋蟀在戸) in the style of traditional Japanese ukiyo-e art: An image representing the Japanese micro-season 'Crickets chirp around the door' (蟋蟀在戸); with Totoro from My Neighbor Totoro sitting under a red torii gate
+Model: stable_diffusion
+Parameters:
+  model: stable_diffusion
+  style: ukiyo-e
+  base_prompt: Crickets chirp around the door
+  custom_prompt: with Totoro from My Neighbor Totoro sitting under a red torii gate
+  temperature: 0
+  max_tokens: 1000
+  seed: 42
+Saved Image: image/Crickets_chirp_around_the_door_image.png_ec1d24d7-7fc4-40c6-82ef-de588b8fae04_20241021_stable_diffusion.png
+
+UUID: 907b336a-3c21-43c5-a848-358392f86055
+Timestamp: 20241021
+Prompt: In the style of traditional Japanese ukiyo-e art: An image representing the Japanese micro-season 'Crickets chirp around the door'; with paper lanterns illuminating the scene and a peaceful Zen rock garden
+Model: stable_diffusion
+Parameters:
+  model: stable_diffusion
+  style: ukiyo-e
+  base_prompt: Crickets chirp around the door
+  custom_prompt: with paper lanterns illuminating the scene and a peaceful Zen rock garden
+  temperature: 0
+  max_tokens: 1000
+  seed: 42
+Saved Image: image/Crickets_chirp_around_the_door_907b336a-3c21-43c5-a848-358392f86055_20241021_stable_diffusion.png
+
+UUID: 8871e149-5db5-4f9b-ab44-cad9329d627f
+Timestamp: 20241021_185549
+Prompt: Image with a distinctive ultra-wide perspective.: An image representing the Japanese micro-season 'First frost'; showing a bullet train passing by a majestic red torii gate
+Model: stable_diffusion
+Parameters:
+  model: stable_diffusion
+  style: fish eye
+  base_prompt: First frost
+  custom_prompt: showing a bullet train passing by a majestic red torii gate
+  temperature: 0
+  max_tokens: 1000
+  seed: 42
+Saved Image: image/stable_diffusion-First_frost:20241021_8871e149-5db5-4f9b-ab44-cad9329d627f.png
+
+UUID: 1335ff1a-c1e2-4462-8cc6-1da31aa3c734
+Timestamp: 20241021_190438
+Prompt: Image featuring paint splatters and drips.: An image representing the Japanese micro-season 'Chrysanthemums bloom'; featuring a sumo wrestler, a geisha in traditional attire, and a group of macaque monkeys nearby
+Model: stable_diffusion
+Parameters:
+  model: stable_diffusion
+  style: splatter paint
+  base_prompt: Chrysanthemums bloom
+  custom_prompt: featuring a sumo wrestler, a geisha in traditional attire, and a group of macaque monkeys nearby
+  temperature: 0
+  max_tokens: 1000
+  seed: 42
+Saved Image: image/stable_diffusion-Chrysanthemums_bloom:20241021_1335ff1a-c1e2-4462-8cc6-1da31aa3c734.png
+
