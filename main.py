@@ -1,6 +1,6 @@
 from constants import STYLE_PRESETS, IMAGE_SUGGESTIONS, DESCRIPTION_SUGGESTIONS
 
-import datetime
+import pendulum
 import requests
 from PIL import Image
 import io
@@ -333,7 +333,8 @@ class Kou:
         )
 
         # Create the full filename with UUID
-        full_filename = f"images/{ai_model}-{filename}:{datetime.datetime.now().strftime('%Y%m%d')}_{image_uuid}{file_extension}"
+        timestamp_dateonly = pendulum.now("Asia/Tokyo").format("YYYYMMDD")
+        full_filename = f"images/{ai_model}-{filename.lower()}-{timestamp_dateonly}_{image_uuid}{file_extension}"
 
         # Save the image
         image.save(full_filename)
@@ -342,7 +343,10 @@ class Kou:
         # Save the prompt, model information, and parameters to prompts.txt
         with open("history.txt", "a") as f:
             f.write(f"UUID: {image_uuid}\n")
-            f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}\n")
+            timestamp_datetime = pendulum.now("Asia/Tokyo").format(
+                "YYYY-MM-DD HH:mm:ss zz"
+            )
+            f.write(f"Timestamp: {timestamp_datetime}\n")
             f.write(f"Prompt: {prompt}\n")
             f.write(f"Model: {ai_model}\n")
             f.write("Parameters:\n")
